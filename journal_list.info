@@ -1,0 +1,8 @@
+; $Id$
+name = "Journal List"
+description = "Display print journal lists from the library catalog."
+core = 6.x
+php = 5.x
+package = Cornell University Library
+dependencies[] = cul_common
+
