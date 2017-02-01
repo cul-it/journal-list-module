@@ -1,0 +1,198 @@
+<?php
+
+global $journal_list_locations, $journal_list_cache_name;
+$journal_list_locations = preg_split("/[\s,]+/", variable_get('journal_list_locations', ''));
+$journal_list_cache_name = 'journal_list_' . join("_", $journal_list_locations);
+
+
+/**
+ * Implementation of hook_perm().
+ */
+function journal_list_perm() {
+  return array('administer journal list module');
+}
+
+
+/**
+ * Implementation of hook_menu().
+ */
+function journal_list_menu() {
+  $items['admin/settings/journal_list'] = array(
+    'title' => 'Journal List Configuration',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('journal_list_form_location'),
+    'access arguments' => array('administer journal list module'),
+    'file' => 'journal_list.admin.inc',
+  );
+  $items['journal_list/%'] = array(
+    'title' => 'Get print journal list as JSON data.',
+    'page callback' => 'journal_list_get_data_json',
+    'page arguments' => array(1),
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+  );
+  $items['journal_list.debug'] = array(
+    'title' => 'Debug module.',
+    'page callback' => 'journal_list_debug',
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+  );
+  return $items;
+}
+
+
+function journal_list_debug () {
+  echo "LOCATIONS VAR: " . variable_get('journal_list_locations', '')  . '<br><br>';
+      $journal_list_locations = preg_split("/[\s,]+/", variable_get('journal_list_locations', ''));
+      $query = "SELECT BT.TITLE,
+               MM.DISPLAY_CALL_NO,
+               BT.BIB_ID
+            FROM BIB_TEXT BT,
+               BIB_MASTER BS,
+               BIB_MFHD BM,
+               MFHD_MASTER MM,
+               LOCATION LOC
+           WHERE BT.BIB_ID = BM.BIB_ID
+             AND BT.BIB_ID = BS.BIB_ID
+             AND BM.MFHD_ID = MM.MFHD_ID
+             AND LOC.LOCATION_ID = MM.LOCATION_ID
+             AND LOC.LOCATION_CODE IN ('" . join("','", $journal_list_locations) . "')
+             AND BT.BIB_FORMAT = 'as'
+             AND BS.SUPPRESS_IN_OPAC = 'N'
+             AND MM.SUPPRESS_IN_OPAC = 'N'";
+  echo 'QUERY: ' . $query . '<br><br>';
+        $json = voyagerQueryToJSON($query);
+        echo 'JSON: ' . $json . '<br><br>';
+
+}
+/**
+ * Implementation of hook_help().
+ */
+function journal_list_help($path, $arg) {
+  switch ($path) {
+    case 'admin/settings/journal_list':
+      $output .= '<p>'. t('Enter a space separated list of Voyager location codes, a list of which is displayed below. To display the journal list, enable the appropriate block in the <a href="@block">blocks administration page</a>.', array('@block' => url('admin/build/block'))) .'</p>';
+  }
+  return $output;
+}
+
+/**
+ * Implementation of hook_block().
+ *
+ * Generates blocks for the items in each journal_list location.
+ */
+function journal_list_block($op = 'list', $delta = 0, $edit = array()) {
+    if ($op == 'list') {
+        $blocks[0]['info'] = t("Print Journal List From Voyager");
+        return $blocks;
+    } else if ($op == 'view') {
+        $block['subject'] = t('Print Journals');
+        $block['content'] = journal_list_block_display();
+    }
+    return $block;
+}
+
+
+function is_selected($let, $selected) {
+    return ($let == $selected) ? ' ln-selected' : '';
+}
+
+function build_alpha_nav($base_url, $selected='num') {
+   $nav_output = '';
+   $link_template = '<a href="' . $base_url . '/%s" class="alpha_nav%s">%s</a>';
+
+   $nav_output .= sprintf($link_template, 'num', is_selected($let, $selected), '#');
+   foreach(range('A','Z') as $let) {
+       $nav_output .= sprintf($link_template, $let, is_selected($let, $selected), $let);
+   }
+   return $nav_output;
+}
+
+function journal_list_block_display() {
+  drupal_add_js(drupal_get_path('module', 'journal_list') . '/journal_list.js');
+
+  $spinner_src = base_path() . drupal_get_path('module', 'journal_list') . '/loading.gif';
+  $submit_url = url('journal_list');
+  $nav = build_alpha_nav($submit_url);
+
+  $output .= <<<HERE
+      <!-- <input type="text" id="journal_list_filter" style="display:none"> -->
+      <a href="$submit_url" id="journal_list_data_url"></a>
+      <div id="list-nav"><div class="ln-letters">$nav</div></div>
+      <div id="journal_list_spinner"><img src="$spinner_src"> Loading...</div>
+      <div id="journal_list" >
+        <ul id="list">
+        </ul>
+      </div>
+
+        <script>
+        if (Drupal.jsEnabled) {
+          $(document).ready(function () {
+            //set_search_form('#journal_list_filter', 'filter this list...');
+            enable_alpha_nav();
+            display_journal_list('$submit_url/num');
+          });
+        }
+        </script>
+HERE;
+    return $output;
+}
+
+function journal_list_get_and_cache_data($refresh=FALSE) {
+    static $json;
+    global $journal_list_locations, $journal_list_cache_name;
+    if (($cached = cache_get($journal_list_cache_name, 'cache')) && ! empty($cached->data) && ! $refresh) {
+        $json = $cached->data;
+    } else {
+
+      $query = "SELECT BT.TITLE,
+               MM.DISPLAY_CALL_NO,
+               BT.BIB_ID
+            FROM BIB_TEXT BT,
+               BIB_MASTER BS,
+               BIB_MFHD BM,
+               MFHD_MASTER MM,
+               LOCATION LOC
+           WHERE BT.BIB_ID = BM.BIB_ID
+             AND BT.BIB_ID = BS.BIB_ID
+             AND BM.MFHD_ID = MM.MFHD_ID
+             AND LOC.LOCATION_ID = MM.LOCATION_ID
+             AND LOC.LOCATION_CODE IN ('" . join("','", $journal_list_locations) . "')
+             AND BT.BIB_FORMAT = 'as'
+             AND BS.SUPPRESS_IN_OPAC = 'N'
+             AND MM.SUPPRESS_IN_OPAC = 'N'";
+        $json = voyagerQueryToJSON($query);
+        cache_set($journal_list_cache_name, $json, 'cache');
+    }
+    return $json;
+}
+
+function journal_list_get_data_json($let) {
+    if ($let != '') {
+      $let = strtoupper($let);
+      if ($let == 'NUM') {
+        $let = '[0-9]';
+      }
+      $pattern = "/^$let/";
+
+      $json = journal_list_get_and_cache_data();
+      $json_array = json_decode($json);
+      $final_array = array();
+      foreach ($json_array->results as $key => $value) {
+        if (preg_match($pattern, strtoupper($value->TITLE))) {
+          $final_array['results'][] = $value;
+        }
+      }
+      output_json_string(json_encode($final_array));
+    }
+}
+
+/**
+ * Implementation of hook_cron().
+ */
+function journal_list_cron() {
+  global $journal_list_locations, $journal_list_cache_name;
+  cache_clear_all($journal_list_cache_name, 'cache', TRUE);
+  journal_list_get_and_cache_data(TRUE);
+}
+
