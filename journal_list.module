@@ -178,9 +178,11 @@ function journal_list_get_data_json($let) {
       $json = journal_list_get_and_cache_data();
       $json_array = json_decode($json);
       $final_array = array();
-      foreach ($json_array->results as $key => $value) {
-        if (preg_match($pattern, strtoupper($value->TITLE))) {
-          $final_array['results'][] = $value;
+      if (!empty($json_array->results)) {
+        foreach ($json_array->results as $key => $value) {
+          if (preg_match($pattern, strtoupper($value->TITLE))) {
+            $final_array['results'][] = $value;
+          }
         }
       }
       output_json_string(json_encode($final_array));
