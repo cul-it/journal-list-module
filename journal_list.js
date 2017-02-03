@@ -71,7 +71,8 @@ function sort_journals(a,b) {
 }
 
 function create_catalog_link(bibid) {
- return "https://catalog.library.cornell.edu/cgi-bin/Pwebrecon.cgi?BBID=" + bibid + "&DB=local";
+ // return "https://catalog.library.cornell.edu/cgi-bin/Pwebrecon.cgi?BBID=" + bibid + "&DB=local";
+  return "https://newcatalog.library.cornell.edu/catalog/" + bibid;
 }
 
 function enable_alpha_nav() {
